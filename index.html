@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NEXUS • Buda GIS Command Center v2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Leaflet for real web mapping -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- jsPDF for export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&amp;family=Space+Grotesk:wght@500;600&amp;display=swap');
+        
+        body { font-family: 'Inter', system_ui, sans-serif; }
+        .font-display { font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; }
+
+        .nexus-bg { background: #0a0a0f; }
+        
+        .neon-text-green { color: #00ff87; text-shadow: 0 0 12px #00ff87; }
+        .neon-text-cyan { color: #60efff; text-shadow: 0 0 12px #60efff; }
+        .neon-text-pink { color: #ff0080; text-shadow: 0 0 12px #ff0080; }
+        .neon-text-yellow { color: #ffcc00; text-shadow: 0 0 12px #ffcc00; }
+
+        .nexus-card {
+            background: rgba(15, 15, 25, 0.95);
+            border: 1px solid rgba(255,255,255,0.1);
+            transition: transform 0.2s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.2s ease;
+        }
+        .nexus-card:hover { transform: translateY(-1px); }
+
+        .neon-glow-green { box-shadow: 0 0 25px rgba(0, 255, 135, 0.5); }
+        .neon-glow-cyan { box-shadow: 0 0 25px rgba(96, 239, 255, 0.5); }
+
+        .section-header { position: relative; display: inline-block; }
+        .section-header::after {
+            content: ''; position: absolute; bottom: -6px; left: 0;
+            width: 50%; height: 2px; background: linear-gradient(to right, #00ff87, transparent);
+        }
+
+        .nav-tab {
+            position: relative; padding-bottom: 10px; cursor: pointer;
+            transition: all 0.2s ease; color: #a1a1aa;
+        }
+        .nav-tab.active {
+            color: #fff; border-bottom: 3px solid #00ff87;
+        }
+        .nav-tab:hover { color: #fff; }
+
+        .map-container { background: #111114; border: 1px solid rgba(0, 255, 135, 0.15); }
+        
+        #cityCanvas { border-radius: 12px; box-shadow: 0 0 35px rgba(0,0,0,0.7); cursor: crosshair; }
+        
+        .status-in { background: rgba(0,255,135,0.12); border-color: #00ff87; color: #00ff87; }
+        .status-etj { background: rgba(96,239,255,0.12); border-color: #60efff; color: #60efff; }
+        .status-out { background: rgba(255,0,128,0.12); border-color: #ff0080; color: #ff0080; }
+
+        .nexus-btn {
+            transition: all 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+            position: relative; overflow: hidden;
+        }
+        .nexus-btn::after {
+            content: ''; position: absolute; top: -50%; left: -100%; width: 50%; height: 200%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+            transition: 0.5s;
+        }
+        .nexus-btn:hover::after { left: 300%; }
+
+        .layer-row {
+            transition: all 0.15s ease;
+        }
+        .layer-row.active { background-color: rgba(0, 255, 135, 0.08); }
+
+        .metric { font-variant-numeric: tabular-nums; }
+
+        .neon-divider { height: 1px; background: linear-gradient(to right, transparent, #00ff87, transparent); opacity: 0.25; }
+
+        .leaflet-popup-content-wrapper { background: #111114; color: #fff; border: 1px solid #00ff87; border-radius: 10px; }
+        .leaflet-popup-tip { background: #111114; border: 1px solid #00ff87; }
+        
+        .gis-stat { transition: all 0.3s ease; }
+    </style>
+</head>
+<body class="nexus-bg text-white">
+    <!-- Top Navigation -->
+    <nav class="border-b border-white/10 bg-black/60 backdrop-blur-xl sticky top-0 z-50">
+        <div class="max-w-screen-2xl mx-auto px-8 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-x-4">
+                <div class="flex items-center gap-x-3">
+                    <div onclick="resetAll()" 
+                         class="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#00ff87] via-[#60efff] to-[#ff0080] flex items-center justify-center cursor-pointer hover:scale-105 transition-transform">
+                        <i class="fa-solid fa-globe text-black text-2xl"></i>
+                    </div>
+                    <div>
+                        <span class="font-display text-3xl tracking-[-1.5px]">NEXUS</span>
+                        <span class="text-[#00ff87] text-sm font-mono ml-1 align-super">v2</span>
+                    </div>
+                </div>
+                <div class="px-4 py-1.5 rounded-3xl border border-white/20 text-xs tracking-[2px] flex items-center gap-x-2">
+                    <i class="fa-solid fa-satellite text-[#00ff87]"></i>
+                    <span>BUDA GIS COMMAND CENTER</span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-x-6 text-sm">
+                <div class="hidden lg:flex items-center gap-x-2 text-xs">
+                    <div class="px-3 py-1 rounded-2xl bg-white/5 flex items-center gap-x-2">
+                        <div class="w-2 h-2 bg-[#00ff87] rounded-full animate-pulse"></div>
+                        <span class="text-white/70">LIVE DATA SYNC ENABLED</span>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="text-xs text-white/50">ANTMANTHEPRO • DOUBLEA</div>
+                    <div class="font-medium text-sm">Buda, Hays County, TX</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="max-w-screen-2xl mx-auto px-8 border-t border-white/10">
+            <div class="flex gap-x-8 text-sm font-medium">
+                <div onclick="switchTab(0)" class="nav-tab active py-4 px-1" id="tab-0">
+                    <i class="fa-solid fa-tachometer-alt mr-2"></i> DASHBOARD
+                </div>
+                <div onclick="switchTab(1)" class="nav-tab py-4 px-1" id="tab-1">
+                    <i class="fa-solid fa-draw-polygon mr-2"></i> BOUNDARY VISUALIZER
+                </div>
+                <div onclick="switchTab(2)" class="nav-tab py-4 px-1" id="tab-2">
+                    <i class="fa-solid fa-map-marked mr-2"></i> LIVE LEAFLET MAP
+                </div>
+                <div onclick="switchTab(3)" class="nav-tab py-4 px-1" id="tab-3">
+                    <i class="fa-solid fa-search mr-2"></i> PROPERTY QUERY
+                </div>
+                <div onclick="switchTab(4)" class="nav-tab py-4 px-1" id="tab-4">
+                    <i class="fa-solid fa-download mr-2"></i> EXPORT &amp; TOOLS
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- DASHBOARD TAB -->
+    <div id="content-0" class="tab-content max-w-screen-2xl mx-auto px-8 pt-8 pb-12">
+        <div class="flex items-end justify-between mb-8">
+            <div>
+                <div class="uppercase tracking-[3px] text-xs text-[#00ff87] font-semibold mb-1">OFFICIAL • REAL-TIME</div>
+                <h1 class="font-display text-6xl tracking-[-2px]">Buda City Limits<br><span class="neon-text-green">Intelligence</span></h1>
+            </div>
+            <div class="text-right text-sm text-white/60 max-w-xs">
+                Powered by City of Buda ArcGIS Hub • Updated with latest annexations
+            </div>
+        </div>
+
+        <!-- Key Metrics -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
+            <div class="nexus-card rounded-3xl p-6 border border-white/10">
+                <div class="text-xs text-white/50 tracking-widest">INCORPORATED AREA</div>
+                <div class="text-5xl font-display tracking-tighter metric neon-text-green mt-1">9.72</div>
+                <div class="text-white/70">square miles</div>
+            </div>
+            <div class="nexus-card rounded-3xl p-6 border border-white/10">
+                <div class="text-xs text-white/50 tracking-widest">POPULATION (EST.)</div>
+                <div class="text-5xl font-display tracking-tighter metric mt-1">~18,500</div>
+                <div class="text-white/70">growing rapidly</div>
+            </div>
+            <div class="nexus-card rounded-3xl p-6 border border-white/10">
+                <div class="text-xs text-white/50 tracking-widest">JURISDICTION</div>
+                <div class="mt-2">
+                    <div class="text-xl font-semibold">City Limits + ETJ</div>
+                    <div class="text-[#60efff] text-sm">+ Limited Purpose Areas</div>
+                </div>
+            </div>
+            <div class="nexus-card rounded-3xl p-6 border border-white/10">
+                <div class="text-xs text-white/50 tracking-widest">NEIGHBORS</div>
+                <div class="mt-2 space-y-0.5 text-sm">
+                    <div>Kyle (South)</div>
+                    <div>Austin ETJ (North)</div>
+                    <div>Hays / Mountain City</div>
+                </div>
+            </div>
+            <div class="nexus-card rounded-3xl p-6 border border-white/10">
+                <div class="text-xs text-white/50 tracking-widest">LAST ANNEXATION</div>
+                <div class="mt-1">
+                    <div class="text-xl font-semibold">2025</div>
+                    <div class="text-xs text-white/70">Multiple parcels (Suffield / Dacy area + others)</div>
+                </div>
+            </div>
+            <div class="nexus-card rounded-3xl p-6 border border-white/10 flex flex-col justify-between">
+                <div>
+                    <div class="text-xs text-white/50 tracking-widest">DATA STATUS</div>
+                    <div class="text-[#00ff87] font-semibold mt-1">OFFICIAL • AUTHORITATIVE</div>
+                </div>
+                <div class="text-[10px] text-white/50">Source: map-budatx.hub.arcgis.com</div>
+            </div>
+        </div>
+
+        <div class="grid lg:grid-cols-12 gap-6">
+            <!-- Quick Links -->
+            <div class="lg:col-span-5 nexus-card rounded-3xl p-8 border border-white/10">
+                <h3 class="font-display text-2xl tracking-tight mb-5">Official Sources</h3>
+                <div class="space-y-3 text-sm">
+                    <a href="https://map-budatx.hub.arcgis.com/" target="_blank" 
+                       class="flex items-center justify-between group px-5 py-4 rounded-2xl border border-white/20 hover:border-[#00ff87] hover:bg-white/5 transition-all">
+                        <div class="flex items-center gap-x-3">
+                            <i class="fa-solid fa-globe text-[#00ff87]"></i>
+                            <span>Buda Maps! ArcGIS Hub</span>
+                        </div>
+                        <i class="fa-solid fa-external-link-alt text-white/40 group-hover:text-[#00ff87]"></i>
+                    </a>
+                    <a href="https://map-budatx.hub.arcgis.com/datasets/buda-city-limits" target="_blank"
+                       class="flex items-center justify-between group px-5 py-4 rounded-2xl border border-white/20 hover:border-[#00ff87] hover:bg-white/5 transition-all">
+                        <div class="flex items-center gap-x-3">
+                            <i class="fa-solid fa-layer-group text-[#00ff87]"></i>
+                            <span>City Limits Layer (Direct)</span>
+                        </div>
+                        <i class="fa-solid fa-external-link-alt text-white/40 group-hover:text-[#00ff87]"></i>
+                    </a>
+                    <a href="https://map-budatx.hub.arcgis.com/datasets/buda-etj" target="_blank"
+                       class="flex items-center justify-between group px-5 py-4 rounded-2xl border border-white/20 hover:border-[#60efff] hover:bg-white/5 transition-all">
+                        <div class="flex items-center gap-x-3">
+                            <i class="fa-solid fa-border-all text-[#60efff]"></i>
+                            <span>ETJ Layer</span>
+                        </div>
+                        <i class="fa-solid fa-external-link-alt text-white/40 group-hover:text-[#60efff]"></i>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Boundary Summary -->
+            <div class="lg:col-span-7 nexus-card rounded-3xl p-8 border border-white/10">
+                <h3 class="font-display text-2xl tracking-tight mb-4">Current Boundary Summary</h3>
+                <div class="text-white/80 text-[15px] leading-relaxed">
+                    Buda’s city limits form an irregular polygon along the IH-35 corridor, anchored by historic downtown. 
+                    The ETJ extends outward as a planning buffer. Recent annexations have expanded the incorporated area, 
+                    particularly in the southeast and along key corridors. The official ArcGIS map remains the single source of truth 
+                    for property-specific determinations (permitting, taxes, voting districts, services).
+                </div>
+                <div class="mt-5 pt-5 border-t border-white/10 grid grid-cols-3 gap-4 text-xs">
+                    <div><span class="text-[#00ff87] font-medium">North:</span> Austin ETJ influence</div>
+                    <div><span class="text-[#00ff87] font-medium">South:</span> City of Kyle</div>
+                    <div><span class="text-[#00ff87] font-medium">East/West:</span> Hays County + creeks</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOUNDARY VISUALIZER TAB (Enhanced Canvas) -->
+    <div id="content-1" class="tab-content hidden max-w-screen-2xl mx-auto px-8 pt-8 pb-12">
+        <div class="flex items-end justify-between mb-6">
+            <div>
+                <span class="section-header font-display text-4xl tracking-tight">Enhanced Boundary Visualizer</span>
+                <p class="text-white/60 mt-1">Artistic + functional Canvas representation • Click to query • Measure distances</p>
+            </div>
+            <div class="flex gap-x-3">
+                <button onclick="resetCanvasView()" 
+                        class="nexus-btn px-5 py-2.5 text-sm rounded-2xl border border-white/30 hover:bg-white/5 flex items-center gap-x-2">
+                    <i class="fa-solid fa-undo"></i> <span>Reset View</span>
+                </button>
+                <button onclick="randomQueryPoint()" 
+                        class="nexus-btn px-5 py-2.5 text-sm rounded-2xl border border-white/30 hover:bg-white/5 flex items-center gap-x-2">
+                    <i class="fa-solid fa-dice"></i> <span>Random Query</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="grid lg:grid-cols-12 gap-6">
+            <!-- Canvas -->
+            <div class="lg:col-span-8">
+                <div class="map-container rounded-3xl p-4">
+                    <canvas id="cityCanvas" width="900" height="620" class="w-full rounded-2xl"></canvas>
+                </div>
+                <div class="flex justify-between items-center mt-3 px-2 text-xs text-white/50">
+                    <div>Drag to pan • Scroll to zoom • Click to query jurisdiction • Double-click to measure</div>
+                    <div class="font-mono">v2 • Canvas + Advanced Rendering</div>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="lg:col-span-4 space-y-5">
+                <!-- Layers -->
+                <div class="nexus-card rounded-3xl p-6 border border-white/10">
+                    <div class="uppercase tracking-[1.5px] text-xs text-white/50 mb-4 px-1">LAYERS</div>
+                    
+                    <div onclick="toggleCanvasLayer('limits')" class="layer-row active flex items-center justify-between px-4 py-[13px] rounded-2xl border border-[#00ff87] bg-[#00ff87]/10 mb-2 cursor-pointer" id="layer-limits">
+                        <div class="flex items-center gap-x-3"><i class="fa-solid fa-draw-polygon text-[#00ff87]"></i> <span class="font-medium">City Limits</span></div>
+                        <div class="w-10 h-5 bg-[#00ff87] rounded-full relative"><div class="absolute right-0.5 top-0.5 w-4 h-4 bg-black rounded-full transition-all" id="switch-limits"></div></div>
+                    </div>
+                    
+                    <div onclick="toggleCanvasLayer('etj')" class="layer-row active flex items-center justify-between px-4 py-[13px] rounded-2xl border border-[#60efff] bg-[#60efff]/10 mb-2 cursor-pointer" id="layer-etj">
+                        <div class="flex items-center gap-x-3"><i class="fa-solid fa-border-all text-[#60efff]"></i> <span class="font-medium">ETJ</span></div>
+                        <div class="w-10 h-5 bg-[#60efff] rounded-full relative"><div class="absolute right-0.5 top-0.5 w-4 h-4 bg-black rounded-full transition-all" id="switch-etj"></div></div>
+                    </div>
+                    
+                    <div onclick="toggleCanvasLayer('roads')" class="layer-row active flex items-center justify-between px-4 py-[13px] rounded-2xl border border-white/30 bg-white/5 cursor-pointer" id="layer-roads">
+                        <div class="flex items-center gap-x-3"><i class="fa-solid fa-road text-white/80"></i> <span class="font-medium">IH-35 + Roads</span></div>
+                        <div class="w-10 h-5 bg-white/70 rounded-full relative"><div class="absolute right-0.5 top-0.5 w-4 h-4 bg-black rounded-full transition-all" id="switch-roads"></div></div>
+                    </div>
+                </div>
+
+                <!-- Query Result -->
+                <div class="nexus-card rounded-3xl p-6 border border-white/10">
+                    <div class="uppercase tracking-[1.5px] text-xs text-white/50 mb-3 px-1">POINT QUERY RESULT</div>
+                    <div id="canvas-query-box" class="min-h-[110px] rounded-2xl border border-white/20 bg-black/40 px-5 py-4 flex items-center justify-center text-center">
+                        <div id="canvas-query-placeholder" class="text-white/50 text-sm">Click anywhere on the map to query jurisdiction status</div>
+                        <div id="canvas-query-result" class="hidden w-full"></div>
+                    </div>
+                </div>
+
+                <div class="text-[10px] px-1 text-white/40 leading-tight">
+                    This is an enhanced artistic representation. For legal use, always verify with the official ArcGIS portal.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- LIVE LEAFLET MAP TAB -->
+    <div id="content-2" class="tab-content hidden max-w-screen-2xl mx-auto px-8 pt-8 pb-12">
+        <div class="mb-6">
+            <span class="section-header font-display text-4xl tracking-tight">Live Interactive Map</span>
+            <p class="text-white/60 mt-1">Real Leaflet + OpenStreetMap base with Buda city limits &amp; ETJ overlays (approximate for demo)</p>
+        </div>
+
+        <div class="grid lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-9">
+                <div id="leaflet-map" class="rounded-3xl overflow-hidden border border-white/10 shadow-2xl" style="height: 620px;"></div>
+            </div>
+            
+            <div class="lg:col-span-3 space-y-5">
+                <div class="nexus-card rounded-3xl p-6 border border-white/10">
+                    <div class="text-xs uppercase tracking-widest text-white/50 mb-3">MAP CONTROLS</div>
+                    <button onclick="flyToDowntown()" class="w-full mb-2 nexus-btn px-5 py-3 text-sm rounded-2xl border border-white/30 hover:bg-white/5 flex items-center justify-center gap-x-2">
+                        <i class="fa-solid fa-city"></i> <span>Fly to Downtown Buda</span>
+                    </button>
+                    <button onclick="fitToCityLimits()" class="w-full nexus-btn px-5 py-3 text-sm rounded-2xl border border-white/30 hover:bg-white/5 flex items-center justify-center gap-x-2">
+                        <i class="fa-solid fa-expand-arrows-alt"></i> <span>Fit to City Limits</span>
+                    </button>
+                </div>
+                
+                <div class="nexus-card rounded-3xl p-6 border border-white/10 text-sm">
+                    <div class="text-xs uppercase tracking-widest text-white/50 mb-3">LAYER INFO</div>
+                    <div class="space-y-3 text-xs">
+                        <div class="flex justify-between"><span>Base</span> <span class="text-white/60">OpenStreetMap</span></div>
+                        <div class="flex justify-between"><span>City Limits</span> <span class="text-[#00ff87]">Neon Green</span></div>
+                        <div class="flex justify-between"><span>ETJ</span> <span class="text-[#60efff]">Cyan</span></div>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-white/10 text-[10px] text-white/50">
+                        These overlays are approximate representations for portfolio demonstration. Official boundaries live in the ArcGIS Hub.
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PROPERTY QUERY TAB -->
+    <div id="content-3" class="tab-content hidden max-w-screen-2xl mx-auto px-8 pt-8 pb-12">
+        <div class="max-w-3xl">
+            <span class="section-header font-display text-4xl tracking-tight">Property Jurisdiction Query</span>
+            <p class="mt-2 text-white/70">Simulated smart search. Enter a Buda-style address to see jurisdiction results.</p>
+        </div>
+
+        <div class="mt-8 max-w-2xl">
+            <div class="flex gap-x-3">
+                <input id="address-input" type="text" placeholder="e.g. 405 E Loop St, Buda, TX 78610" 
+                       class="flex-1 bg-black/40 border border-white/20 focus:border-[#00ff87] rounded-3xl px-6 py-4 text-lg outline-none placeholder:text-white/40">
+                <button onclick="runPropertyQuery()" 
+                        class="nexus-btn px-10 rounded-3xl bg-[#00ff87] text-black font-semibold flex items-center gap-x-3 hover:bg-white">
+                    <span>QUERY</span> <i class="fa-solid fa-search"></i>
+                </button>
+            </div>
+            
+            <div id="property-result" class="hidden mt-6 nexus-card rounded-3xl p-8 border border-white/10">
+                <!-- Populated by JS -->
+            </div>
+
+            <div class="mt-6 text-xs text-white/50">
+                This is a high-fidelity simulation. Real address validation uses the official Buda GIS or Hays County appraisal district tools.
+            </div>
+        </div>
+    </div>
+
+    <!-- EXPORT & TOOLS TAB -->
+    <div id="content-4" class="tab-content hidden max-w-screen-2xl mx-auto px-8 pt-8 pb-12">
+        <div class="max-w-4xl">
+            <span class="section-header font-display text-4xl tracking-tight">Export &amp; Tools</span>
+            <p class="text-white/70 mt-2">Generate professional deliverables from this dashboard.</p>
+        </div>
+
+        <div class="mt-8 grid md:grid-cols-3 gap-6 max-w-5xl">
+            <div onclick="exportCanvasPNG()" class="nexus-card cursor-pointer rounded-3xl p-8 border border-white/10 hover:border-[#00ff87] group">
+                <i class="fa-solid fa-image text-3xl text-[#00ff87] mb-5 group-hover:scale-110 transition-transform"></i>
+                <div class="font-semibold text-xl tracking-tight">Export Visualizer as PNG</div>
+                <div class="text-sm text-white/70 mt-2">High-resolution screenshot of the current Canvas view with all active layers.</div>
+            </div>
+            
+            <div onclick="generatePDFReport()" class="nexus-card cursor-pointer rounded-3xl p-8 border border-white/10 hover:border-[#60efff] group">
+                <i class="fa-solid fa-file-pdf text-3xl text-[#60efff] mb-5 group-hover:scale-110 transition-transform"></i>
+                <div class="font-semibold text-xl tracking-tight">Generate PDF Report</div>
+                <div class="text-sm text-white/70 mt-2">Create a clean multi-page PDF summary including boundary overview, metrics, and query history.</div>
+            </div>
+            
+            <div onclick="copyEmbedCode()" class="nexus-card cursor-pointer rounded-3xl p-8 border border-white/10 hover:border-[#ff0080] group">
+                <i class="fa-solid fa-code text-3xl text-[#ff0080] mb-5 group-hover:scale-110 transition-transform"></i>
+                <div class="font-semibold text-xl tracking-tight">Copy Embed Code</div>
+                <div class="text-sm text-white/70 mt-2">Get ready-to-paste HTML snippet for this dashboard (for your portfolio site).</div>
+            </div>
+        </div>
+
+        <div class="mt-10 text-xs max-w-3xl text-white/50">
+            All exports are generated client-side. No data leaves your browser. Perfect for quick client deliverables or interview materials.
+        </div>
+    </div>
+
+    <script>
+        // ==================== TAILWIND + GLOBAL ====================
+        function initTailwind() {
+            // Already handled by CDN
+        }
+
+        let currentTab = 0;
+        function switchTab(tabIndex) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById('content-' + tabIndex).classList.remove('hidden');
+            
+            document.querySelectorAll('.nav-tab').forEach((el, i) => {
+                el.classList.toggle('active', i === tabIndex);
+            });
+            
+            currentTab = tabIndex;
+            
+            // Initialize Leaflet when tab 2 is first opened
+            if (tabIndex === 2 && !window.leafletMapInitialized) {
+                setTimeout(initLeafletMap, 50);
+            }
+        }
+
+        // ==================== CANVAS VISUALIZER (v2 Enhanced) ====================
+        let canvas, ctx;
+        let scale = 1.0;
+        let offsetX = 40;
+        let offsetY = 30;
+        let isDragging = false;
+        let lastX = 0, lastY = 0;
+        let measureMode = false;
+        let measurePoints = [];
+
+        const cityLimitsPoly = [
+            {x:310,y:130},{x:355,y:105},{x:405,y:115},{x:455,y:95},{x:505,y:125},
+            {x:535,y:175},{x:530,y:235},{x:495,y:295},{x:430,y:325},{x:365,y:340},
+            {x:305,y:315},{x:275,y:260},{x:280,y:195}
+        ];
+
+        const etjPoly = [
+            {x:195,y:65},{x:265,y:45},{x:370,y:38},{x:485,y:55},{x:555,y:95},
+            {x:580,y:175},{x:575,y:265},{x:535,y:345},{x:455,y:390},{x:355,y:385},
+            {x:255,y:355},{x:195,y:280},{x:180,y:175}
+        ];
+
+        const ih35 = [
+            {x:395,y:20},{x:388,y:110},{x:382,y:210},{x:378,y:310},{x:385,y:410},{x:392,y:530}
+        ];
+
+        let canvasLayers = { limits: true, etj: true, roads: true };
+
+        function drawCanvas() {
+            if (!ctx) return;
+            ctx.save();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Subtle grid
+            ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < canvas.width; x += 32) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += 32) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+            }
+
+            ctx.translate(offsetX, offsetY);
+            ctx.scale(scale, scale);
+
+            // ETJ
+            if (canvasLayers.etj) {
+                ctx.save();
+                ctx.shadowColor = '#60efff';
+                ctx.shadowBlur = 16;
+                ctx.fillStyle = 'rgba(96,239,255,0.07)';
+                ctx.strokeStyle = '#60efff';
+                ctx.lineWidth = 3.5;
+                ctx.beginPath();
+                ctx.moveTo(etjPoly[0].x, etjPoly[0].y);
+                etjPoly.forEach(p => ctx.lineTo(p.x, p.y));
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // City Limits
+            if (canvasLayers.limits) {
+                ctx.save();
+                ctx.shadowColor = '#00ff87';
+                ctx.shadowBlur = 18;
+                ctx.fillStyle = 'rgba(0,255,135,0.13)';
+                ctx.strokeStyle = '#00ff87';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(cityLimitsPoly[0].x, cityLimitsPoly[0].y);
+                cityLimitsPoly.forEach(p => ctx.lineTo(p.x, p.y));
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // Inner highlight
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = 'rgba(0,255,135,0.7)';
+                ctx.lineWidth = 1.2;
+                ctx.stroke();
+                ctx.restore();
+            }
+
+            // Roads
+            if (canvasLayers.roads) {
+                ctx.save();
+                ctx.shadowColor = '#ffcc00';
+                ctx.shadowBlur = 10;
+                ctx.strokeStyle = '#ffcc00';
+                ctx.lineWidth = 12;
+                ctx.lineJoin = 'round';
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(ih35[0].x, ih35[0].y);
+                ih35.forEach(p => ctx.lineTo(p.x, p.y));
+                ctx.stroke();
+
+                ctx.shadowBlur = 0;
+                ctx.strokeStyle = '#111114';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([14, 16]);
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.font = '700 11px Inter, system-ui';
+                ctx.fillStyle = '#ffcc00';
+                ctx.shadowColor = 'rgba(0,0,0,0.7)';
+                ctx.shadowBlur = 3;
+                ctx.fillText('IH-35', 405, 48);
+            }
+
+            // Key labels & markers
+            ctx.save();
+            ctx.shadowBlur = 6;
+            ctx.shadowColor = '#ff0080';
+            ctx.fillStyle = '#ff0080';
+            ctx.beginPath(); ctx.arc(370, 195, 6, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0;
+            ctx.font = '700 10px Inter, system-ui';
+            ctx.fillText('DOWNTOWN', 382, 192);
+
+            ctx.fillStyle = '#ffcc00';
+            ctx.fillText('KYLE →', 395, 490);
+            ctx.fillStyle = '#60efff';
+            ctx.fillText('AUSTIN ETJ ↑', 260, 62);
+            ctx.fillStyle = '#ff0080';
+            ctx.fillText('MOUNTAIN CITY', 175, 395);
+            ctx.restore();
+
+            ctx.restore();
+        }
+
+        function updateCanvasLayerSwitches() {
+            const ids = ['limits', 'etj', 'roads'];
+            ids.forEach(id => {
+                const row = document.getElementById('layer-' + id);
+                const sw = document.getElementById('switch-' + id);
+                if (!row || !sw) return;
+                
+                if (canvasLayers[id]) {
+                    row.classList.add('active', 'border-[#00ff87]', 'bg-[#00ff87]/10');
+                    row.classList.remove('border-white/30', 'bg-white/5');
+                    sw.style.right = '2px';
+                } else {
+                    row.classList.remove('active', 'border-[#00ff87]', 'bg-[#00ff87]/10');
+                    row.classList.add('border-white/30', 'bg-white/5');
+                    sw.style.right = '18px';
+                }
+            });
+        }
+
+        function toggleCanvasLayer(layer) {
+            canvasLayers[layer] = !canvasLayers[layer];
+            updateCanvasLayerSwitches();
+            drawCanvas();
+        }
+
+        function getCanvasWorldPoint(clientX, clientY) {
+            const rect = canvas.getBoundingClientRect();
+            const screenX = clientX - rect.left;
+            const screenY = clientY - rect.top;
+            return {
+                x: (screenX - offsetX) / scale,
+                y: (screenY - offsetY) / scale
+            };
+        }
+
+        function queryCanvasPoint(worldPoint) {
+            const box = document.getElementById('canvas-query-box');
+            const placeholder = document.getElementById('canvas-query-placeholder');
+            const resultDiv = document.getElementById('canvas-query-result');
+
+            let status = 'OUTSIDE ALL JURISDICTION';
+            let cls = 'status-out';
+            let icon = 'fa-times-circle';
+            let detail = 'This location is outside Buda city limits and ETJ.';
+
+            const inLimits = pointInPoly(worldPoint, cityLimitsPoly);
+            const inETJ = pointInPoly(worldPoint, etjPoly);
+
+            if (inLimits) {
+                status = 'INSIDE CITY LIMITS';
+                cls = 'status-in';
+                icon = 'fa-check-circle';
+                detail = 'Full municipal authority. Subject to city taxes, zoning, ordinances, and services.';
+            } else if (inETJ) {
+                status = 'BUDA ETJ';
+                cls = 'status-etj';
+                icon = 'fa-info-circle';
+                detail = 'Extraterritorial Jurisdiction. Limited planning/subdivision authority. Future annexation candidate.';
+            }
+
+            placeholder.classList.add('hidden');
+            resultDiv.classList.remove('hidden');
+            resultDiv.innerHTML = `
+                <div class="flex items-start gap-x-3">
+                    <i class="fa-solid ${icon} text-3xl mt-0.5"></i>
+                    <div>
+                        <div class="font-semibold text-xl tracking-tight">${status}</div>
+                        <div class="text-sm text-white/70 mt-1 leading-snug">${detail}</div>
+                    </div>
+                </div>
+            `;
+            box.className = `min-h-[110px] rounded-2xl border px-5 py-4 flex items-center ${cls}`;
+
+            // Visual flash on canvas
+            flashCanvasPoint(worldPoint);
+        }
+
+        function pointInPoly(point, poly) {
+            let inside = false;
+            for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+                if (((poly[i].y > point.y) !== (poly[j].y > point.y)) &&
+                    (point.x < (poly[j].x - poly[i].x) * (point.y - poly[i].y) / (poly[j].y - poly[i].y) + poly[i].x)) {
+                    inside = !inside;
+                }
+            }
+            return inside;
+        }
+
+        function flashCanvasPoint(worldPoint) {
+            const screenX = worldPoint.x * scale + offsetX;
+            const screenY = worldPoint.y * scale + offsetY;
+            
+            const original = drawCanvas;
+            const flash = () => {
+                ctx.save();
+                ctx.shadowColor = '#ffcc00';
+                ctx.shadowBlur = 30;
+                ctx.fillStyle = '#ffcc00';
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 11, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+                setTimeout(() => { drawCanvas(); }, 160);
+            };
+            flash();
+        }
+
+        function handleCanvasClick(e) {
+            if (measureMode) {
+                handleMeasureClick(e);
+                return;
+            }
+            const world = getCanvasWorldPoint(e.clientX, e.clientY);
+            queryCanvasPoint(world);
+        }
+
+        let measureStart = null;
+        function handleMeasureClick(e) {
+            const world = getCanvasWorldPoint(e.clientX, e.clientY);
+            
+            if (!measureStart) {
+                measureStart = world;
+                // draw temporary marker
+                drawCanvas();
+                ctx.save();
+                ctx.translate(offsetX, offsetY);
+                ctx.scale(scale, scale);
+                ctx.fillStyle = '#ff0080';
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = '#ff0080';
+                ctx.beginPath(); ctx.arc(world.x, world.y, 5, 0, Math.PI*2); ctx.fill();
+                ctx.restore();
+            } else {
+                const dist = Math.hypot(world.x - measureStart.x, world.y - measureStart.y);
+                const realDist = (dist * 0.012).toFixed(2); // rough artistic scale
+                
+                const box = document.getElementById('canvas-query-box');
+                const placeholder = document.getElementById('canvas-query-placeholder');
+                const resultDiv = document.getElementById('canvas-query-result');
+                
+                placeholder.classList.add('hidden');
+                resultDiv.classList.remove('hidden');
+                resultDiv.innerHTML = `
+                    <div>
+                        <div class="font-semibold text-xl tracking-tight text-[#ffcc00]">DISTANCE MEASURED</div>
+                        <div class="text-4xl font-display mt-1 tracking-tighter">${realDist} <span class="text-base align-baseline text-white/60">mi (approx)</span></div>
+                        <div class="text-xs text-white/60 mt-2">Artistic scale • For reference only</div>
+                    </div>
+                `;
+                box.className = `min-h-[110px] rounded-2xl border px-5 py-4 flex items-center border-[#ffcc00] bg-[#ffcc00]/10`;
+                
+                measureStart = null;
+                measureMode = false;
+                setTimeout(drawCanvas, 800);
+            }
+        }
+
+        function initCanvas() {
+            canvas = document.getElementById('cityCanvas');
+            ctx = canvas.getContext('2d');
+
+            // Events
+            canvas.addEventListener('click', handleCanvasClick);
+            canvas.addEventListener('mousedown', e => {
+                if (measureMode) return;
+                isDragging = true;
+                lastX = e.clientX;
+                lastY = e.clientY;
+                canvas.style.cursor = 'grabbing';
+            });
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+                canvas.style.cursor = 'crosshair';
+            });
+            canvas.addEventListener('mousemove', e => {
+                if (!isDragging) return;
+                offsetX += e.clientX - lastX;
+                offsetY += e.clientY - lastY;
+                lastX = e.clientX;
+                lastY = e.clientY;
+                drawCanvas();
+            });
+            canvas.addEventListener('wheel', e => {
+                e.preventDefault();
+                const rect = canvas.getBoundingClientRect();
+                const mx = e.clientX - rect.left;
+                const my = e.clientY - rect.top;
+                
+                const factor = e.deltaY < 0 ? 1.16 : 0.86;
+                const newScale = Math.max(0.55, Math.min(4.2, scale * factor));
+                
+                offsetX = mx - (mx - offsetX) * (newScale / scale);
+                offsetY = my - (my - offsetY) * (newScale / scale);
+                scale = newScale;
+                drawCanvas();
+            });
+
+            // Double click = enter measure mode
+            canvas.addEventListener('dblclick', () => {
+                measureMode = true;
+                measureStart = null;
+                const box = document.getElementById('canvas-query-box');
+                box.className = `min-h-[110px] rounded-2xl border px-5 py-4 flex items-center border-[#ffcc00] bg-[#ffcc00]/10`;
+                document.getElementById('canvas-query-placeholder').classList.add('hidden');
+                document.getElementById('canvas-query-result').classList.remove('hidden');
+                document.getElementById('canvas-query-result').innerHTML = `
+                    <div class="text-center w-full">
+                        <div class="font-semibold text-[#ffcc00]">MEASURE MODE ACTIVE</div>
+                        <div class="text-sm text-white/70 mt-1">Click two points on the map to measure approximate distance</div>
+                    </div>
+                `;
+            });
+
+            // Touch support
+            canvas.addEventListener('touchstart', e => {
+                if (e.touches.length === 1) {
+                    isDragging = true;
+                    lastX = e.touches[0].clientX;
+                    lastY = e.touches[0].clientY;
+                }
+            });
+            canvas.addEventListener('touchmove', e => {
+                if (!isDragging || e.touches.length !== 1) return;
+                e.preventDefault();
+                offsetX += e.touches[0].clientX - lastX;
+                offsetY += e.touches[0].clientY - lastY;
+                lastX = e.touches[0].clientX;
+                lastY = e.touches[0].clientY;
+                drawCanvas();
+            });
+            canvas.addEventListener('touchend', () => isDragging = false);
+
+            drawCanvas();
+            updateCanvasLayerSwitches();
+        }
+
+        function resetCanvasView() {
+            scale = 1.0;
+            offsetX = 40;
+            offsetY = 30;
+            drawCanvas();
+            // reset query box
+            document.getElementById('canvas-query-placeholder').classList.remove('hidden');
+            document.getElementById('canvas-query-result').classList.add('hidden');
+            document.getElementById('canvas-query-box').className = 'min-h-[110px] rounded-2xl border border-white/20 bg-black/40 px-5 py-4 flex items-center justify-center text-center';
+        }
+
+        function randomQueryPoint() {
+            const rx = 220 + Math.random() * 280;
+            const ry = 90 + Math.random() * 280;
+            const world = {x: rx, y: ry};
+            queryCanvasPoint(world);
+        }
+
+        // ==================== LEAFLET MAP ====================
+        let leafletMap = null;
+        window.leafletMapInitialized = false;
+
+        function initLeafletMap() {
+            if (leafletMap) return;
+            
+            leafletMap = L.map('leaflet-map', {
+                zoomControl: true,
+                attributionControl: false
+            }).setView([30.085, -97.84], 12);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                className: 'map-tiles'
+            }).addTo(leafletMap);
+
+            // Approximate City Limits polygon (rough but recognizable)
+            const cityLimitsGeo = [
+                [30.115, -97.88], [30.105, -97.82], [30.095, -97.79],
+                [30.078, -97.795], [30.065, -97.81], [30.058, -97.86],
+                [30.072, -97.89], [30.095, -97.885]
+            ];
+
+            const etjGeo = [
+                [30.13, -97.91], [30.12, -97.78], [30.105, -97.755],
+                [30.055, -97.76], [30.04, -97.82], [30.045, -97.92],
+                [30.08, -97.925]
+            ];
+
+            L.polygon(cityLimitsGeo, {
+                color: '#00ff87',
+                weight: 3,
+                fillColor: '#00ff87',
+                fillOpacity: 0.15,
+                className: 'neon-glow-green'
+            }).addTo(leafletMap).bindPopup('<strong>City of Buda Limits</strong><br>Official incorporated boundary');
+
+            L.polygon(etjGeo, {
+                color: '#60efff',
+                weight: 2.5,
+                fillColor: '#60efff',
+                fillOpacity: 0.08,
+                dashArray: '6 4'
+            }).addTo(leafletMap).bindPopup('<strong>Buda ETJ</strong><br>Extraterritorial Jurisdiction');
+
+            // Downtown marker
+            L.marker([30.085, -97.84]).addTo(leafletMap)
+                .bindPopup('<strong>Downtown Buda</strong><br>Main St &amp; FM 967 area');
+
+            window.leafletMapInitialized = true;
+        }
+
+        function flyToDowntown() {
+            if (leafletMap) leafletMap.flyTo([30.085, -97.84], 14, {duration: 1.2});
+        }
+        function fitToCityLimits() {
+            if (leafletMap) leafletMap.flyTo([30.085, -97.84], 11.5, {duration: 1.1});
+        }
+
+        // ==================== PROPERTY QUERY ====================
+        const sampleAddresses = {
+            "405 e loop st": { status: "INSIDE CITY LIMITS", detail: "City Hall area • Full municipal services", type: "Government" },
+            "102 n austin st": { status: "INSIDE CITY LIMITS", detail: "Recent zoning discussion area", type: "Mixed Use" },
+            "suffield drive": { status: "BUDA ETJ", detail: "Recent annexation activity in 2025", type: "Residential" },
+            "dacy lane": { status: "BUDA ETJ", detail: "Partially annexed • Check official map", type: "Mixed" },
+            "main street buda": { status: "INSIDE CITY LIMITS", detail: "Historic downtown core", type: "Commercial" }
+        };
+
+        function runPropertyQuery() {
+            const input = document.getElementById('address-input').value.toLowerCase().trim();
+            const resultBox = document.getElementById('property-result');
+            
+            let found = false;
+            let matchKey = '';
+            
+            for (let key in sampleAddresses) {
+                if (input.includes(key)) {
+                    found = true;
+                    matchKey = key;
+                    break;
+                }
+            }
+
+            if (!found && input.length > 3) {
+                // Generic fallback
+                resultBox.innerHTML = `
+                    <div class="flex gap-x-4">
+                        <div><i class="fa-solid fa-info-circle text-3xl text-[#60efff]"></i></div>
+                        <div>
+                            <div class="font-semibold text-xl">POSSIBLE ETJ / OUTSIDE</div>
+                            <div class="text-white/80 mt-1">No exact match in demo database. This address likely falls in Buda ETJ or adjacent jurisdiction.</div>
+                            <div class="mt-4 text-xs text-white/60">Recommendation: Verify in the official Buda GIS portal using the exact address.</div>
+                        </div>
+                    </div>
+                `;
+                resultBox.className = 'mt-6 nexus-card rounded-3xl p-8 border border-[#60efff]';
+                resultBox.classList.remove('hidden');
+                return;
+            }
+
+            if (found) {
+                const data = sampleAddresses[matchKey];
+                const cls = data.status.includes('CITY') ? 'border-[#00ff87]' : 'border-[#60efff]';
+                resultBox.innerHTML = `
+                    <div class="flex gap-x-4">
+                        <div><i class="fa-solid fa-check-circle text-3xl ${data.status.includes('CITY') ? 'text-[#00ff87]' : 'text-[#60efff]'}"></i></div>
+                        <div class="flex-1">
+                            <div class="font-semibold text-2xl tracking-tight">${data.status}</div>
+                            <div class="text-white/80 mt-1">${data.detail}</div>
+                            <div class="mt-4 inline-block px-4 py-1 rounded-2xl text-xs border border-white/30">${data.type}</div>
+                            
+                            <div class="mt-5 text-xs text-white/50">This is a simulated result based on known Buda locations. Always confirm with official sources for real decisions.</div>
+                        </div>
+                    </div>
+                `;
+                resultBox.className = `mt-6 nexus-card rounded-3xl p-8 border ${cls}`;
+                resultBox.classList.remove('hidden');
+            }
+        }
+
+        // ==================== EXPORT TOOLS ====================
+        function exportCanvasPNG() {
+            if (!canvas) return alert("Visualizer not loaded yet.");
+            const link = document.createElement('a');
+            link.download = 'Buda_City_Limits_Visualizer_NEXUS.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        function generatePDFReport() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            doc.setFillColor(10, 10, 15);
+            doc.rect(0, 0, 210, 297, 'F');
+            
+            doc.setTextColor(0, 255, 135);
+            doc.setFontSize(22);
+            doc.text("NEXUS • Buda GIS Command Center", 20, 25);
+            
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(12);
+            doc.text("City Limits Intelligence Report — Generated " + new Date().toLocaleDateString(), 20, 35);
+            
+            doc.setFontSize(11);
+            doc.text("Incorporated Area: 9.72 sq mi", 20, 50);
+            doc.text("Jurisdiction: City Limits + ETJ + Limited Purpose", 20, 57);
+            doc.text("Primary Corridor: IH-35, Hays County, Texas", 20, 64);
+            
+            doc.text("Key Neighbors: City of Kyle (South), Austin ETJ (North)", 20, 78);
+            
+            doc.setTextColor(150, 150, 150);
+            doc.setFontSize(9);
+            doc.text("This report was generated from the NEXUS Buda GIS Command Center v2.", 20, 260);
+            doc.text("For official use, always consult map-budatx.hub.arcgis.com", 20, 266);
+            
+            doc.save('Buda_GIS_Report_NEXUS.pdf');
+        }
+
+        function copyEmbedCode() {
+            const code = `<!-- NEXUS Buda GIS Command Center v2 Embed -->
+<iframe src="NEXUS_Buda_GIS_Command_Center_v2.html" width="100%" height="800" style="border: none; border-radius: 16px;" title="Buda GIS Dashboard"></iframe>`;
+            
+            navigator.clipboard.writeText(code).then(() => {
+                const origText = event.currentTarget ? event.currentTarget.innerText : '';
+                alert("Embed code copied to clipboard! Paste it into your portfolio site.");
+            }).catch(() => {
+                prompt("Copy this embed code:", code);
+            });
+        }
+
+        function resetAll() {
+            // Reset canvas
+            if (canvas) {
+                scale = 1.0; offsetX = 40; offsetY = 30;
+                drawCanvas();
+            }
+            // Reset query boxes
+            const ph = document.getElementById('canvas-query-placeholder');
+            const res = document.getElementById('canvas-query-result');
+            if (ph && res) {
+                ph.classList.remove('hidden');
+                res.classList.add('hidden');
+            }
+            // Switch to dashboard
+            switchTab(0);
+        }
+
+        // Keyboard shortcuts
+        function initKeyboard() {
+            document.addEventListener('keydown', function(e) {
+                if (e.key.toLowerCase() === 'r' && currentTab === 1) {
+                    e.preventDefault();
+                    resetCanvasView();
+                }
+                if (e.key === ' ' && currentTab === 1) {
+                    e.preventDefault();
+                    randomQueryPoint();
+                }
+                if (e.key.toLowerCase() === '/' && document.activeElement.id !== 'address-input') {
+                    e.preventDefault();
+                    switchTab(3);
+                    setTimeout(() => document.getElementById('address-input').focus(), 80);
+                }
+            });
+            
+            // Global hint
+            console.log('%c[NEXUS v2] Keyboard: R = reset canvas | SPACE = random query | / = focus property search', 'color:#00ff87');
+        }
+
+        // Boot everything
+        function bootNEXUS() {
+            initTailwind();
+            initCanvas();
+            initKeyboard();
+            
+            // Start on Dashboard
+            switchTab(0);
+            
+            // Easter egg: logo resets everything
+            const logo = document.querySelector('.fa-globe');
+            if (logo) logo.parentElement.onclick = resetAll;
+            
+            // Preload a nice query hint
+            setTimeout(() => {
+                const ph = document.getElementById('canvas-query-placeholder');
+                if (ph && currentTab === 0) {
+                    // nothing intrusive
+                }
+            }, 2200);
+            
+            console.log('%c[NEXUS Buda GIS Command Center v2] Fully initialized. Ready for portfolio use.', 'color:#60efff; font-size: 9px');
+        }
+
+        window.onload = bootNEXUS;
+    </script>
+</body>
+</html>
